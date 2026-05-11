@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +44,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.bookchat.ui.downloads.DownloadViewModel
 import com.bookchat.ui.downloads.DownloadsScreen
 import com.bookchat.ui.search.IrcStatusDot
 import com.bookchat.ui.search.SearchScreen
@@ -98,6 +101,10 @@ private fun BookChatApp(userEventBus: UserEventBus) {
     val inSettings = currentRoute == Routes.SETTINGS
     val searchViewModel: SearchViewModel = hiltViewModel()
     val connectionState by searchViewModel.connectionState.collectAsStateWithLifecycle()
+    val downloadViewModel: DownloadViewModel = hiltViewModel()
+    val downloadQueue by downloadViewModel.queue.collectAsStateWithLifecycle()
+    val activeDownload by downloadViewModel.activeDownload.collectAsStateWithLifecycle()
+    val downloadCount = downloadQueue.size + if (activeDownload != null) 1 else 0
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -144,7 +151,13 @@ private fun BookChatApp(userEventBus: UserEventBus) {
                                 restoreState = true
                             }
                         },
-                        icon = { Icon(Icons.Default.Download, contentDescription = null) },
+                        icon = {
+                            BadgedBox(badge = {
+                                if (downloadCount > 0) Badge { Text("$downloadCount") }
+                            }) {
+                                Icon(Icons.Default.Download, contentDescription = null)
+                            }
+                        },
                         label = { Text("Downloads") },
                     )
                 }
