@@ -35,6 +35,7 @@ import com.bookchat.service.DownloadItem
 import com.bookchat.service.DownloadItemState
 import com.bookchat.ui.common.CenteredContent
 import com.bookchat.ui.common.SectionHeader
+import com.bookchat.ui.common.formatSpeed
 
 @Composable
 fun DownloadsScreen(viewModel: DownloadViewModel = hiltViewModel()) {
@@ -201,12 +202,6 @@ private fun CompletedItemCard(item: DownloadItem, onRetry: () -> Unit) {
 @Composable
 private fun DownloadsEmptyState() {
     CenteredContent(icon = "⬇", title = "All clear", subtitle = "No downloads in progress")
-}
-
-private fun formatSpeed(bps: Long): String = when {
-    bps >= 1_000_000 -> "${bps / 1_000_000} MB/s"
-    bps >= 1_000 -> "${bps / 1_000} KB/s"
-    else -> "$bps B/s"
 }
 
 private fun formatEta(seconds: Long): String = when {

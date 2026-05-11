@@ -8,6 +8,7 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.bookchat.ui.MainActivity
+import com.bookchat.ui.common.formatSpeed
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -102,12 +103,6 @@ class DownloadService : Service() {
             lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
         }
         notificationManager.createNotificationChannel(channel)
-    }
-
-    private fun formatSpeed(bps: Long): String = when {
-        bps >= 1_000_000 -> "${bps / 1_000_000} MB/s"
-        bps >= 1_000 -> "${bps / 1_000} KB/s"
-        else -> "$bps B/s"
     }
 
     companion object {
