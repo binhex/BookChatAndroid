@@ -35,7 +35,7 @@ class SettingsRepository @Inject constructor(
     val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
         AppSettings(
             ircServer = prefs[Keys.ircServer] ?: "irc.irchighway.net",
-            ircPort = prefs[Keys.ircPort] ?: 6697,
+            ircPort = prefs[Keys.ircPort] ?: 6667,
             ircUseSsl = prefs[Keys.ircUseSsl] ?: false,
             ircChannel = prefs[Keys.ircChannel] ?: "#ebooks",
             ircNickname = prefs[Keys.ircNickname] ?: generateDefaultNick(),
