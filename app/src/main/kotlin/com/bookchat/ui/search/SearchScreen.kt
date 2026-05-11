@@ -6,10 +6,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardActions
@@ -185,15 +187,21 @@ fun BookResultCard(result: SearchResult, onDownload: (SearchResult) -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = buildString {
-                        if (result.fileSize.isNotBlank()) append(result.fileSize)
-                        if (result.fileSize.isNotBlank() && result.botName.isNotBlank()) append(" · ")
-                        if (result.botName.isNotBlank()) append(result.botName)
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = buildString {
+                            if (result.fileSize.isNotBlank()) append(result.fileSize)
+                            if (result.fileSize.isNotBlank() && result.botName.isNotBlank()) append(" · ")
+                            if (result.botName.isNotBlank()) append(result.botName)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (result.reliabilityScore != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        ReliabilityIndicator(score = result.reliabilityScore)
+                    }
+                }
                 DownloadButton(state = result.downloadState, onClick = { onDownload(result) })
             }
 
@@ -252,6 +260,27 @@ private fun FormatPill(format: String) {
 }
 
 @Composable
+private fun ReliabilityIndicator(score: Double) {
+    val color = when {
+        score >= 0.80 -> Color(0xFF4CAF50)
+        score >= 0.50 -> Color(0xFFFFA000)
+        else          -> Color(0xFFE53935)
+    }
+    val pct = (score * 100).toInt()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Canvas(modifier = Modifier.size(7.dp), contentDescription = "Reliability $pct%") {
+            drawCircle(color = color)
+        }
+        Spacer(modifier = Modifier.width(3.dp))
+        Text(
+            text = "$pct%",
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+        )
+    }
+}
+
+@Composable
 fun IrcStatusDot(state: IrcConnectionState, modifier: Modifier = Modifier) {
     val color = when (state) {
         is IrcConnectionState.Disconnected -> Color.Gray
@@ -275,7 +304,12 @@ private fun ConnectingBanner(state: IrcConnectionState) {
             ) {
                 IrcStatusDot(state)
                 Text(
-                    text = if (state is IrcConnectionState.Connecting) "Connecting to IRC…" else "Disconnected from IRC",
+                    text = when {
+                    state is IrcConnectionState.Connecting && state.lastError != null ->
+                        "Connecting to IRC… (${state.lastError}, attempt ${state.attempt})"
+                    state is IrcConnectionState.Connecting -> "Connecting to IRC…"
+                    else -> "Disconnected from IRC"
+                },
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(start = 8.dp),
                 )

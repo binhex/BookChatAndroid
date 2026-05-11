@@ -1,6 +1,7 @@
 package com.bookchat.data.search
 
 import com.bookchat.data.settings.SettingsRepository
+import com.bookchat.data.stats.BotStatsRepository
 import com.bookchat.irc.IrcRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ sealed class SearchUiState {
 @Singleton
 class SearchRepository @Inject constructor(
     private val ircRepository: IrcRepository,
+    private val botStatsRepository: BotStatsRepository,
     private val settingsRepository: SettingsRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -115,7 +117,14 @@ class SearchRepository @Inject constructor(
         if (parsed.isEmpty()) {
             _searchState.value = SearchUiState.NoResults
         } else {
-            _results.value = parsed
+            val stats = botStatsRepository.allStats.first()
+            val ranked = ResultRanker.rank(parsed, stats)
+            _results.value = ranked.map { result ->
+                val s = stats[result.botName]
+                if (s != null && s.successes + s.failures > 0)
+                    result.copy(reliabilityScore = s.reliabilityScore)
+                else result
+            }
             _searchState.value = SearchUiState.ResultsReady(parsed.size)
         }
     }

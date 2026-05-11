@@ -68,4 +68,5 @@ dependencies {
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.documentfile)
+    implementation(libs.play.services.auth)
 }

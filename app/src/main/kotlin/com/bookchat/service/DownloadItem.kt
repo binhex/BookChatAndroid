@@ -23,6 +23,7 @@ sealed class DownloadItemState {
         val etaSeconds: Long,
     ) : DownloadItemState()
     data object Done : DownloadItemState()
+    data class SavedLocally(val driveError: String) : DownloadItemState()
     data class Failed(val reason: String) : DownloadItemState()
     data object Cancelled : DownloadItemState()
 }

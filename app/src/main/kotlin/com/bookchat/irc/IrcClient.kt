@@ -15,6 +15,12 @@ import java.io.InputStreamReader
 import java.io.PrintWriter
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.X509TrustManager
 import kotlin.math.min
 import kotlin.math.pow
 
@@ -36,35 +42,44 @@ class IrcClient {
     // Runs forever — caller cancels the coroutine to stop.
     suspend fun connectLoop(settings: AppSettings) {
         var attempt = 0
+        var lastError: String? = null
         while (true) {
-            _connectionState.value = IrcConnectionState.Connecting(attempt)
+            // Preserve last error so the banner stays readable across retries
+            _connectionState.value = IrcConnectionState.Connecting(attempt, lastError)
             try {
                 connect(settings)
-                // Clean disconnect (server closed connection) — retry immediately
                 attempt = 0
+                lastError = null
             } catch (e: CancellationException) {
                 _connectionState.value = IrcConnectionState.Disconnected
                 throw e
             } catch (e: Exception) {
-                // Failed connection — brief backoff, capped at 15s so the user
-                // doesn't wait long after the screen wakes up
+                val errMsg = e.message?.substringAfterLast(": ")?.trim() ?: e.javaClass.simpleName
+                lastError = "$errMsg (${settings.ircServer}:${settings.ircPort}${if (settings.ircUseSsl) " SSL" else ""})"
                 val backoffMs = min(2_000L * 2.0.pow(attempt).toLong(), 15_000L)
                 attempt++
-                _connectionState.value = IrcConnectionState.Connecting(attempt)
+                _connectionState.value = IrcConnectionState.Connecting(attempt, lastError)
                 delay(backoffMs)
             }
         }
     }
 
     private suspend fun connect(settings: AppSettings) = withContext(Dispatchers.IO) {
-        val sock = Socket()
+        val plain = Socket()
+        plain.connect(InetSocketAddress(settings.ircServer, settings.ircPort), 30_000)
+        val sock: Socket = if (settings.ircUseSsl) {
+            val ssl = trustAllSslFactory()
+                .createSocket(plain, settings.ircServer, settings.ircPort, true) as SSLSocket
+            ssl.soTimeout = 30_000
+            ssl.startHandshake()
+            ssl
+        } else {
+            plain
+        }
         socket = sock
         try {
-            sock.connect(InetSocketAddress(settings.ircServer, settings.ircPort), 30_000)
-            // Keep the OS-level TCP connection alive so the server doesn't time out
-            // when the phone screen is off and the network is briefly quiet.
             sock.keepAlive = true
-            sock.soTimeout = 0 // blocking reads; PING/PONG handles server-side keepalive
+            sock.soTimeout = 30_000 // covers first server line; reset to 0 after first data
 
             val reader = BufferedReader(InputStreamReader(sock.getInputStream()))
             val pw = PrintWriter(sock.getOutputStream(), true)
@@ -74,9 +89,14 @@ class IrcClient {
             pw.println("USER bookchat 0 * :BookChat Android")
 
             var registered = false
+            var firstLine = true
 
             while (!sock.isClosed) {
                 val raw = reader.readLine() ?: break
+                if (firstLine) {
+                    sock.soTimeout = 0  // SSL handshake done, switch to blocking reads
+                    firstLine = false
+                }
                 val line = raw.trimEnd()
 
                 if (line.startsWith("PING")) {
@@ -105,5 +125,18 @@ class IrcClient {
 
     fun disconnect() {
         runCatching { socket?.close() }
+    }
+
+    // IRC SSL certs are frequently self-signed — disable verification.
+    // SSL here is used to bypass carrier port blocking, not for certificate trust.
+    private fun trustAllSslFactory(): SSLSocketFactory {
+        val trustAll = object : X509TrustManager {
+            override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) = Unit
+            override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) = Unit
+            override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+        }
+        return SSLContext.getInstance("TLS").apply {
+            init(null, arrayOf(trustAll), SecureRandom())
+        }.socketFactory
     }
 }

@@ -13,6 +13,8 @@ data class SearchResult(
     val rawLine: String,
     val fileName: String,
     val downloadState: DownloadState = DownloadState.Idle,
+    /** 0.0–1.0 from BotStats; null = no recorded history for this bot. */
+    val reliabilityScore: Double? = null,
 ) {
     val downloadCommand: String get() = "!$botName $fileHash"
 

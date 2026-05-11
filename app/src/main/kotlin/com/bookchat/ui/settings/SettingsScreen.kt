@@ -1,5 +1,6 @@
 package com.bookchat.ui.settings
 
+import android.accounts.AccountManager
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,8 +15,13 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -50,13 +56,15 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val driveAuthIntent by viewModel.driveAuthIntent.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val folderPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
-            // Take persistent permission so we can write after app restarts
             context.contentResolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
@@ -65,7 +73,26 @@ fun SettingsScreen(
         }
     }
 
+    val driveAuthLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { viewModel.clearDriveAuthIntent() }
+
+    // Launch consent screen whenever driveAuthIntent is set
+    androidx.compose.runtime.LaunchedEffect(driveAuthIntent) {
+        driveAuthIntent?.let { driveAuthLauncher.launch(it) }
+    }
+
+    val accountPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val accountName = result.data?.getStringExtra(AccountManager.KEY_ACCOUNT_NAME)
+        if (accountName != null) {
+            viewModel.update { it.copy(driveAccountName = accountName) }
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Settings") },
@@ -115,6 +142,29 @@ fun SettingsScreen(
                 )
             }
             item {
+                ListItem(
+                    headlineContent = { Text("Use SSL (port 6697)") },
+                    supportingContent = {
+                        Text(
+                            "Recommended — bypasses carrier port blocking",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    trailingContent = {
+                        androidx.compose.material3.Switch(
+                            checked = settings.ircUseSsl,
+                            onCheckedChange = { on ->
+                                viewModel.update { it.copy(
+                                    ircUseSsl = on,
+                                    ircPort = if (on) 6697 else 6667,
+                                ) }
+                            },
+                        )
+                    },
+                )
+            }
+            item {
                 EditableField(
                     label = "Password",
                     value = settings.ircPassword,
@@ -123,7 +173,49 @@ fun SettingsScreen(
                 )
             }
             item { HorizontalDivider() }
-            item { SectionHeader("Downloads") }
+            item { SectionHeader("Google Drive") }
+            item {
+                ListItem(
+                    headlineContent = { Text("Google account") },
+                    supportingContent = {
+                        Text(
+                            text = settings.driveAccountName.ifBlank { "Not connected — tap to choose" },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    },
+                    modifier = Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() },
+                    ) {
+                        accountPicker.launch(
+                            AccountManager.newChooseAccountIntent(
+                                null, null, arrayOf("com.google"),
+                                null, null, null, null
+                            )
+                        )
+                    },
+                )
+            }
+            item {
+                EditableField(
+                    label = "CalibreWatch folder URL or ID",
+                    value = settings.driveFolderId,
+                    onSave = { viewModel.update { s -> s.copy(driveFolderId = viewModel.parseDriveFolderId(this)) } },
+                )
+            }
+            item {
+                Button(
+                    onClick = {
+                        viewModel.testDriveAuth { result ->
+                            scope.launch { snackbarHostState.showSnackbar(result) }
+                        }
+                    },
+                    enabled = settings.driveAccountName.isNotBlank() && settings.driveFolderId.isNotBlank(),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                ) { Text("Test / Authorize Drive") }
+            }
+            item { SectionHeader("Local fallback") }
             item {
                 ListItem(
                     headlineContent = { Text("Watch folder") },

@@ -165,6 +165,7 @@ private fun CompletedItemCard(item: DownloadItem, onRetry: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 val prefix = when (item.state) {
                     is DownloadItemState.Done -> "✓ "
+                    is DownloadItemState.SavedLocally -> "⚠ "
                     is DownloadItemState.Cancelled -> "— "
                     else -> "✗ "
                 }
@@ -181,8 +182,16 @@ private fun CompletedItemCard(item: DownloadItem, onRetry: () -> Unit) {
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
+                val savedLocally = item.state as? DownloadItemState.SavedLocally
+                if (savedLocally != null) {
+                    Text(
+                        text = "Saved to Downloads/BookChat — ${savedLocally.driveError}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
-            if (failedState != null) {
+            if (failedState != null || item.state is DownloadItemState.SavedLocally) {
                 TextButton(onClick = onRetry) { Text("Retry") }
             }
         }

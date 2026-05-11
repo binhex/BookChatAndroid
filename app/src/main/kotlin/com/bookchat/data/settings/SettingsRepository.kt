@@ -22,21 +22,27 @@ class SettingsRepository @Inject constructor(
     private object Keys {
         val ircServer = stringPreferencesKey("irc_server")
         val ircPort = intPreferencesKey("irc_port")
+        val ircUseSsl = androidx.datastore.preferences.core.booleanPreferencesKey("irc_use_ssl")
         val ircChannel = stringPreferencesKey("irc_channel")
         val ircNickname = stringPreferencesKey("irc_nickname")
         val ircPassword = stringPreferencesKey("irc_password")
         val watchFolderUri = stringPreferencesKey("watch_folder_uri")
+        val driveAccountName = stringPreferencesKey("drive_account_name")
+        val driveFolderId = stringPreferencesKey("drive_folder_id")
         val recentSearches = stringPreferencesKey("recent_searches")
     }
 
     val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
         AppSettings(
             ircServer = prefs[Keys.ircServer] ?: "irc.irchighway.net",
-            ircPort = prefs[Keys.ircPort] ?: 6667,
+            ircPort = prefs[Keys.ircPort] ?: 6697,
+            ircUseSsl = prefs[Keys.ircUseSsl] ?: false,
             ircChannel = prefs[Keys.ircChannel] ?: "#ebooks",
             ircNickname = prefs[Keys.ircNickname] ?: generateDefaultNick(),
             ircPassword = prefs[Keys.ircPassword] ?: "",
             watchFolderUri = prefs[Keys.watchFolderUri] ?: "",
+            driveAccountName = prefs[Keys.driveAccountName] ?: "",
+            driveFolderId = prefs[Keys.driveFolderId] ?: "",
         )
     }
 
@@ -51,10 +57,13 @@ class SettingsRepository @Inject constructor(
         dataStore.edit { prefs ->
             prefs[Keys.ircServer] = settings.ircServer
             prefs[Keys.ircPort] = settings.ircPort
+            prefs[Keys.ircUseSsl] = settings.ircUseSsl
             prefs[Keys.ircChannel] = settings.ircChannel
             prefs[Keys.ircNickname] = settings.ircNickname
             prefs[Keys.ircPassword] = settings.ircPassword
             prefs[Keys.watchFolderUri] = settings.watchFolderUri
+            prefs[Keys.driveAccountName] = settings.driveAccountName
+            prefs[Keys.driveFolderId] = settings.driveFolderId
         }
     }
 

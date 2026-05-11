@@ -39,7 +39,7 @@ class IrcRepository @Inject constructor(
         scope.launch {
             settingsRepository.settings
                 .distinctUntilChangedBy {
-                    listOf(it.ircServer, it.ircPort, it.ircChannel, it.ircNickname)
+                    listOf(it.ircServer, it.ircPort, it.ircChannel, it.ircNickname, it.ircUseSsl)
                 }
                 .collect { settings -> reconnect(settings) }
         }
