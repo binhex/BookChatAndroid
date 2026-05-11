@@ -62,6 +62,7 @@ fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
     val diagnosticsExpanded by viewModel.diagnosticsExpanded.collectAsStateWithLifecycle()
     val diagnosticsEntries by viewModel.diagnosticsEntries.collectAsStateWithLifecycle()
+    val exportStatus by viewModel.exportStatus.collectAsStateWithLifecycle()
 
     SearchScreenWithStrip {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -76,7 +77,9 @@ fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
             DiagnosticsPanel(
                 expanded = diagnosticsExpanded,
                 entries = diagnosticsEntries,
+                exportStatus = exportStatus,
                 onToggle = viewModel::toggleDiagnostics,
+                onExport = viewModel::exportLog,
             )
             Box(modifier = Modifier.weight(1f)) {
                 when {

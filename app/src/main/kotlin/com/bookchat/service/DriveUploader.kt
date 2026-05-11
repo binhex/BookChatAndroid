@@ -35,7 +35,12 @@ class DriveUploader @Inject constructor(
     // Set when getToken throws UserRecoverableAuthException — launch this to show consent screen
     @Volatile var lastAuthIntent: Intent? = null
 
-    suspend fun upload(file: File, accountName: String, folderId: String): Result<Unit> =
+    suspend fun upload(
+        file: File,
+        accountName: String,
+        folderId: String,
+        deleteAfterUpload: Boolean = true,
+    ): Result<Unit> =
         withContext(Dispatchers.IO) {
             if (accountName.isBlank() || folderId.isBlank()) {
                 return@withContext Result.failure(Exception("Drive account or folder not configured"))
@@ -48,8 +53,9 @@ class DriveUploader @Inject constructor(
             val mimeType = when (file.extension.lowercase()) {
                 "epub" -> "application/epub+zip"
                 "mobi" -> "application/x-mobipocket-ebook"
-                "pdf" -> "application/pdf"
-                else -> "application/octet-stream"
+                "pdf"  -> "application/pdf"
+                "txt"  -> "text/plain"
+                else   -> "application/octet-stream"
             }
 
             val metadata = JSONObject().apply {
@@ -72,7 +78,7 @@ class DriveUploader @Inject constructor(
             runCatching {
                 client.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
-                        file.delete()
+                        if (deleteAfterUpload) file.delete()
                         Result.success(Unit)
                     } else {
                         val body = response.body?.string() ?: ""

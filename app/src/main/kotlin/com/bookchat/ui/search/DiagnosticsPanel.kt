@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,7 +41,9 @@ data class DiagnosticsEntry(
 fun DiagnosticsPanel(
     expanded: Boolean,
     entries: List<DiagnosticsEntry>,
+    exportStatus: String,
     onToggle: () -> Unit,
+    onExport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -52,17 +56,30 @@ fun DiagnosticsPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable(onClick = onToggle)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = "IRC Diagnostics" + if (entries.isNotEmpty()) " (${entries.size})" else "",
                     style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.weight(1f),
                 )
+                IconButton(onClick = onExport) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = "Save log to Drive")
+                }
                 Icon(
                     imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                     contentDescription = if (expanded) "Collapse" else "Expand",
+                    modifier = Modifier.padding(end = 8.dp),
+                )
+            }
+            if (exportStatus.isNotEmpty()) {
+                Text(
+                    text = exportStatus,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp, bottom = 4.dp),
                 )
             }
             AnimatedVisibility(visible = expanded) {

@@ -8,8 +8,10 @@ import com.bookchat.data.search.SearchUiState
 import com.bookchat.data.settings.SettingsRepository
 import com.bookchat.irc.IrcConnectionState
 import com.bookchat.irc.IrcRepository
+import com.bookchat.service.DiagnosticsLogger
 import com.bookchat.service.DownloadItem
 import com.bookchat.service.DownloadRepository
+import com.bookchat.service.DriveUploader
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +32,8 @@ class SearchViewModel @Inject constructor(
     private val searchRepository: SearchRepository,
     private val settingsRepository: SettingsRepository,
     private val downloadRepository: DownloadRepository,
+    private val diagnosticsLogger: DiagnosticsLogger,
+    private val driveUploader: DriveUploader,
 ) : ViewModel() {
 
     val connectionState: StateFlow<IrcConnectionState> = ircRepository.connectionState
@@ -52,6 +56,9 @@ class SearchViewModel @Inject constructor(
 
     private val _diagnosticsEntries = MutableStateFlow<List<DiagnosticsEntry>>(emptyList())
     val diagnosticsEntries: StateFlow<List<DiagnosticsEntry>> = _diagnosticsEntries.asStateFlow()
+
+    private val _exportStatus = MutableStateFlow("")
+    val exportStatus: StateFlow<String> = _exportStatus.asStateFlow()
 
     @Volatile private var currentNick = ""
 
@@ -90,8 +97,36 @@ class SearchViewModel @Inject constructor(
 
     fun toggleDiagnostics() { _diagnosticsExpanded.value = !_diagnosticsExpanded.value }
 
+    fun exportLog() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _exportStatus.value = "Uploading…"
+            val settings = settingsRepository.settings.first()
+            if (settings.driveAccountName.isBlank() || settings.driveFolderId.isBlank()) {
+                _exportStatus.value = "Drive not configured — set account and folder in Settings"
+                return@launch
+            }
+            val result = driveUploader.upload(
+                file = diagnosticsLogger.currentFile,
+                accountName = settings.driveAccountName,
+                folderId = settings.driveFolderId,
+                deleteAfterUpload = false,
+            )
+            _exportStatus.value = if (result.isSuccess) {
+                "Saved to Drive ✓"
+            } else {
+                "Upload failed: ${result.exceptionOrNull()?.message}"
+            }
+        }
+    }
+
     private fun addDiagnosticsEntry(entry: DiagnosticsEntry) {
         _diagnosticsEntries.value = (_diagnosticsEntries.value + entry).takeLast(MAX_DIAGNOSTICS_ENTRIES)
+        val marker = when (entry.direction) {
+            DiagnosticsDirection.In     -> "←"
+            DiagnosticsDirection.Out    -> "→"
+            DiagnosticsDirection.System -> "◉"
+        }
+        diagnosticsLogger.append(marker, entry.time, entry.text)
     }
 
     fun onSearchTextChange(text: String) { _searchText.value = text }
