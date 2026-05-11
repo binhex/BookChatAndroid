@@ -22,6 +22,8 @@ import javax.inject.Inject
 
 private const val MAX_DIAGNOSTICS_ENTRIES = 75
 
+private val numericReplyRegex = Regex("""\s\d{3}\s""")
+
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val ircRepository: IrcRepository,
@@ -60,14 +62,28 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             ircRepository.inboundLines.collect { line ->
                 val nick = currentNick
-                if (nick.isNotBlank() && line.contains(nick, ignoreCase = true)) {
-                    addDiagnosticsEntry(DiagnosticsEntry(DiagnosticsDirection.In, line))
-                }
+                val relevant = (nick.isNotBlank() && line.contains(nick, ignoreCase = true))
+                    || line.startsWith("ERROR", ignoreCase = true)
+                    || numericReplyRegex.containsMatchIn(line)
+                if (relevant) addDiagnosticsEntry(DiagnosticsEntry(DiagnosticsDirection.In, line))
             }
         }
         viewModelScope.launch {
             ircRepository.sentLines.collect { line ->
                 addDiagnosticsEntry(DiagnosticsEntry(DiagnosticsDirection.Out, line))
+            }
+        }
+        viewModelScope.launch {
+            ircRepository.connectionState.collect { state ->
+                val text = when (state) {
+                    is IrcConnectionState.Connected    -> "Connected"
+                    is IrcConnectionState.Disconnected -> "Disconnected"
+                    is IrcConnectionState.Connecting   ->
+                        if (state.lastError != null)
+                            "Connecting (attempt ${state.attempt}: ${state.lastError})"
+                        else "Connecting…"
+                }
+                addDiagnosticsEntry(DiagnosticsEntry(DiagnosticsDirection.System, text))
             }
         }
     }

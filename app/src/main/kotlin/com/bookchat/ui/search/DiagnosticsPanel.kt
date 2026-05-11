@@ -21,12 +21,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-enum class DiagnosticsDirection { In, Out }
+enum class DiagnosticsDirection { In, Out, System }
 
 data class DiagnosticsEntry(
     val direction: DiagnosticsDirection,
@@ -86,11 +87,11 @@ fun DiagnosticsPanel(
 
 @Composable
 private fun DiagnosticsEntryRow(entry: DiagnosticsEntry) {
-    val arrow = if (entry.direction == DiagnosticsDirection.In) "←" else "→"
-    val color = if (entry.direction == DiagnosticsDirection.In)
-        MaterialTheme.colorScheme.onSurface
-    else
-        MaterialTheme.colorScheme.primary
+    val (arrow, color) = when (entry.direction) {
+        DiagnosticsDirection.In     -> "←" to MaterialTheme.colorScheme.onSurface
+        DiagnosticsDirection.Out    -> "→" to MaterialTheme.colorScheme.primary
+        DiagnosticsDirection.System -> "◉" to Color(0xFFFFA000)
+    }
     Text(
         text = "$arrow ${entry.time} ${entry.text}",
         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),

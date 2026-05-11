@@ -89,8 +89,8 @@ class IrcClient {
             val pw = PrintWriter(sock.getOutputStream(), true)
             writer = pw
 
-            pw.println("NICK ${settings.ircNickname}")
-            pw.println("USER bookchat 0 * :BookChat Android")
+            sendObserved(pw, "NICK ${settings.ircNickname}")
+            sendObserved(pw, "USER bookchat 0 * :BookChat Android")
 
             var registered = false
             var firstLine = true
@@ -115,7 +115,7 @@ class IrcClient {
                     if (settings.ircPassword.isNotBlank()) {
                         pw.println("PRIVMSG NickServ :IDENTIFY ${settings.ircPassword}")
                     }
-                    pw.println("JOIN ${settings.ircChannel}")
+                    sendObserved(pw, "JOIN ${settings.ircChannel}")
                     _connectionState.value = IrcConnectionState.Connected
                 }
 
@@ -127,6 +127,12 @@ class IrcClient {
             _connectionState.value = IrcConnectionState.Disconnected
             runCatching { sock.close() }
         }
+    }
+
+    // Sends a line and emits it to sentLines. Use for all non-sensitive outbound lines.
+    private fun sendObserved(pw: PrintWriter, line: String) {
+        pw.println(line)
+        _sentLines.tryEmit(line)
     }
 
     fun disconnect() {
