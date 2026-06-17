@@ -144,13 +144,15 @@ class DownloadRepository @Inject constructor(
 
                     // Start timeout for request→offer phase
                     requestTimeoutJob?.cancel()
+                    val timeoutSeconds = settingsRepository.settings.first().downloadTimeoutSeconds
+                    val pendingItemId = item.id
                     requestTimeoutJob = scope.launch {
-                        val timeoutSeconds = settingsRepository.settings.first().downloadTimeoutSeconds
                         delay(timeoutSeconds * 1000L)
                         queueMutex.withLock {
                             val current = _activeDownload.value
-                            if (current?.state is DownloadItemState.RequestSent) {
+                            if (current?.id == pendingItemId && current?.state is DownloadItemState.RequestSent) {
                                 val msg = "No response from bot within ${timeoutSeconds}s"
+                                downloadJob?.cancel()
                                 moveToCompleted(current.copy(state = DownloadItemState.Failed(msg)))
                                 searchRepository.updateResultState(current.expectedFileName, DownloadState.Failed(msg))
                             }
