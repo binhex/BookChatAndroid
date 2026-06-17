@@ -39,7 +39,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PullToRefreshBox
+
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -130,8 +130,6 @@ fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
                     sortedResults.isNotEmpty() -> ResultsList(
                         results = sortedResults,
                         onDownload = viewModel::onDownload,
-                        onRefresh = { viewModel.retryLastSearch() },
-                        isRefreshing = searchState is SearchUiState.Searching,
                         selectionMode = selectionMode,
                         selectedHashes = selectedHashes,
                         onToggleSelection = { hash -> viewModel.toggleSelection(hash) },
@@ -235,36 +233,27 @@ private fun SearchBar(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ResultsList(
     results: List<SearchResult>,
     onDownload: (SearchResult) -> Unit,
-    onRefresh: () -> Unit,
-    isRefreshing: Boolean = false,
     selectionMode: Boolean = false,
     selectedHashes: Set<String> = emptySet(),
     onToggleSelection: (String) -> Unit = {},
 ) {
-    PullToRefreshBox(
-        isRefreshing = isRefreshing,
-        onRefresh = onRefresh,
+    LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            itemsIndexed(results) { _, result ->
-                BookResultCard(
-                    result = result,
-                    onDownload = onDownload,
-                    selectionMode = selectionMode,
-                    isSelected = selectedHashes.contains(result.fileHash),
-                    onToggleSelection = { onToggleSelection(result.fileHash) },
-                )
-            }
+        itemsIndexed(results) { _, result ->
+            BookResultCard(
+                result = result,
+                onDownload = onDownload,
+                selectionMode = selectionMode,
+                isSelected = selectedHashes.contains(result.fileHash),
+                onToggleSelection = { onToggleSelection(result.fileHash) },
+            )
         }
     }
 }
