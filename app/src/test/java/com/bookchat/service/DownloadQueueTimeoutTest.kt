@@ -43,7 +43,7 @@ class DownloadQueueTimeoutTest {
         )
 
         // Remove first (as tryProcessNext does)
-        val first = items.removeFirstOrNull()
+        val first = if (items.isNotEmpty()) items.removeAt(0) else null
 
         assertEquals("First item should be A", "A", first?.displayTitle)
         assertEquals("Queue should still have 1 item", 1, items.size)
@@ -70,7 +70,7 @@ class DownloadQueueTimeoutTest {
         assertEquals("Next should be B", "B", next?.displayTitle)
 
         // Process it
-        activeDownload = items.removeFirst()
+        activeDownload = items.removeAt(0)
         assertEquals("B should now be active", "B", activeDownload?.displayTitle)
         assertTrue("Queue should be empty after B processed", items.isEmpty())
     }
