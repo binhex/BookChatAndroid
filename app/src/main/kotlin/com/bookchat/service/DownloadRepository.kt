@@ -281,8 +281,10 @@ class DownloadRepository @Inject constructor(
     private fun moveToCompleted(item: DownloadItem) {
         _activeDownload.value = null
         callSave()
-        queueMutex.withLock {
-            _completed.value = (listOf(item) + _completed.value).take(10)
+        scope.launch {
+            queueMutex.withLock {
+                _completed.value = (listOf(item) + _completed.value).take(10)
+            }
         }
         tryProcessNext()
     }
