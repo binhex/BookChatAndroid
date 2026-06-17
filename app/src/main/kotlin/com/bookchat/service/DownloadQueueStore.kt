@@ -57,7 +57,8 @@ class DownloadQueueStore @Inject constructor(
         return (0 until arr.length()).mapNotNull { i ->
             val obj = arr.getJSONObject(i)
             runCatching {
-                val idStr = obj.optString("id", null) ?: return@runCatching null
+                if (obj.isNull("id")) return@runCatching null
+                val idStr = obj.getString("id")
                 DownloadItem(
                     id = UUID.fromString(idStr),
                     downloadCommand = obj.getString("downloadCommand"),

@@ -95,4 +95,3 @@ class DownloadQueueTimeoutTest {
     }
 }
 EOF
-echo "Test file updated"
