@@ -16,6 +16,7 @@ object DccDownloader {
         port: Int,
         fileSize: Long,
         destFile: File,
+        timeoutSeconds: Int = 60,
         onProgress: (bytesReceived: Long) -> Unit,
     ): Result<File> = withContext(Dispatchers.IO) {
         require(fileSize < Int.MAX_VALUE) { "File too large for 32-bit ACK" }
@@ -24,6 +25,8 @@ object DccDownloader {
         val socket = Socket()
         try {
             socket.connect(InetSocketAddress(ippDotted, port), 30_000)
+            // Fail-safe: if no data received for timeoutSeconds, read() throws SocketTimeoutException
+            socket.soTimeout = timeoutSeconds * 1000
             val input = socket.getInputStream()
             val output = socket.getOutputStream()
             val buf = ByteArray(8192)

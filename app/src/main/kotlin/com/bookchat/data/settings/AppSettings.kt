@@ -10,4 +10,5 @@ data class AppSettings(
     val watchFolderUri: String = "",
     val driveAccountName: String = "",
     val driveFolderId: String = "",
+    val downloadTimeoutSeconds: Int = 60,
 )

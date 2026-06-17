@@ -30,6 +30,7 @@ class SettingsRepository @Inject constructor(
         val driveAccountName = stringPreferencesKey("drive_account_name")
         val driveFolderId = stringPreferencesKey("drive_folder_id")
         val recentSearches = stringPreferencesKey("recent_searches")
+        val downloadTimeoutSeconds = intPreferencesKey("download_timeout_seconds")
     }
 
     val settings: Flow<AppSettings> = dataStore.data.map { prefs ->
@@ -43,6 +44,7 @@ class SettingsRepository @Inject constructor(
             watchFolderUri = prefs[Keys.watchFolderUri] ?: "",
             driveAccountName = prefs[Keys.driveAccountName] ?: "",
             driveFolderId = prefs[Keys.driveFolderId] ?: "",
+            downloadTimeoutSeconds = prefs[Keys.downloadTimeoutSeconds] ?: 60,
         )
     }
 
@@ -64,6 +66,7 @@ class SettingsRepository @Inject constructor(
             prefs[Keys.watchFolderUri] = settings.watchFolderUri
             prefs[Keys.driveAccountName] = settings.driveAccountName
             prefs[Keys.driveFolderId] = settings.driveFolderId
+            prefs[Keys.downloadTimeoutSeconds] = settings.downloadTimeoutSeconds
         }
     }
 
@@ -75,6 +78,12 @@ class SettingsRepository @Inject constructor(
                 ?: emptyList()
             val updated = (listOf(query) + current).distinct().take(10)
             prefs[Keys.recentSearches] = updated.joinToString("|")
+        }
+    }
+
+    suspend fun clearRecentSearches() {
+        dataStore.edit { prefs ->
+            prefs.remove(Keys.recentSearches)
         }
     }
 

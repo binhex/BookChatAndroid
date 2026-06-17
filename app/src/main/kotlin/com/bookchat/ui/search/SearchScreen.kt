@@ -2,9 +2,11 @@ package com.bookchat.ui.search
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,16 +21,25 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -52,28 +63,54 @@ import com.bookchat.data.search.SearchResult
 import com.bookchat.data.search.SearchUiState
 import com.bookchat.irc.IrcConnectionState
 import com.bookchat.ui.common.CenteredContent
+import com.bookchat.ui.search.SearchViewModel.LanguageFilter
+import com.bookchat.ui.search.SearchViewModel.SortMode
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val searchText by viewModel.searchText.collectAsStateWithLifecycle()
-    val results by viewModel.results.collectAsStateWithLifecycle()
+    val sortedResults by viewModel.sortedAndFiltered.collectAsStateWithLifecycle()
     val searchState by viewModel.searchState.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
     val diagnosticsExpanded by viewModel.diagnosticsExpanded.collectAsStateWithLifecycle()
     val diagnosticsEntries by viewModel.diagnosticsEntries.collectAsStateWithLifecycle()
     val exportStatus by viewModel.exportStatus.collectAsStateWithLifecycle()
+    val selectionMode by viewModel.selectionMode.collectAsStateWithLifecycle()
+    val selectedHashes by viewModel.selectedHashes.collectAsStateWithLifecycle()
+    val sortMode by viewModel.sortMode.collectAsStateWithLifecycle()
+    val languageFilter by viewModel.languageFilter.collectAsStateWithLifecycle()
 
     SearchScreenWithStrip {
         Column(modifier = Modifier.fillMaxSize()) {
             ConnectingBanner(connectionState)
-            SearchBar(
-                text = searchText,
-                enabled = connectionState is IrcConnectionState.Connected,
-                recentSearches = recentSearches,
-                onTextChange = viewModel::onSearchTextChange,
-                onSearch = viewModel::onSearch,
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    SearchBar(
+                        text = searchText,
+                        enabled = connectionState is IrcConnectionState.Connected,
+                        recentSearches = recentSearches,
+                        onTextChange = viewModel::onSearchTextChange,
+                        onSearch = viewModel::onSearch,
+                        onClearRecents = viewModel::clearRecentSearches,
+                    )
+                }
+                if (sortedResults.isNotEmpty()) {
+                    IconButton(onClick = viewModel::toggleSelectionMode) {
+                        Icon(
+                            imageVector = if (selectionMode) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
+                            contentDescription = if (selectionMode) "Cancel selection" else "Select",
+                        )
+                    }
+                }
+            }
             DiagnosticsPanel(
                 expanded = diagnosticsExpanded,
                 entries = diagnosticsEntries,
@@ -81,12 +118,53 @@ fun SearchScreen(viewModel: SearchViewModel = hiltViewModel()) {
                 onToggle = viewModel::toggleDiagnostics,
                 onExport = viewModel::exportLog,
             )
+            SortFilterBar(
+                sortMode = sortMode,
+                languageFilter = languageFilter,
+                onSortChange = viewModel::setSortMode,
+                onLanguageChange = viewModel::setLanguageFilter,
+            )
             Box(modifier = Modifier.weight(1f)) {
                 when {
                     searchState is SearchUiState.Searching -> SearchingIndicator()
-                    results.isNotEmpty() -> ResultsList(results, onDownload = viewModel::onDownload)
-                    searchState is SearchUiState.NoResults -> NoResultsState()
+                    sortedResults.isNotEmpty() -> ResultsList(
+                        results = sortedResults,
+                        onDownload = viewModel::onDownload,
+                        onRefresh = { viewModel.retryLastSearch() },
+                        isRefreshing = searchState is SearchUiState.Searching,
+                        selectionMode = selectionMode,
+                        selectedHashes = selectedHashes,
+                        onToggleSelection = { hash -> viewModel.toggleSelection(hash) },
+                    )
+                    searchState is SearchUiState.NoResults -> NoResultsState(onRetry = viewModel::retryLastSearch)
+                    searchState is SearchUiState.Error -> ErrorState(
+                        message = (searchState as SearchUiState.Error).message,
+                        onRetry = viewModel::retryLastSearch,
+                    )
                     else -> EmptyState()
+                }
+            }
+            AnimatedVisibility(visible = selectionMode && selectedHashes.isNotEmpty()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shadowElevation = 8.dp,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "${selectedHashes.size} selected",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Button(onClick = viewModel::batchDownload) {
+                            Text("Download (${selectedHashes.size})")
+                        }
+                    }
                 }
             }
         }
@@ -100,6 +178,7 @@ private fun SearchBar(
     recentSearches: List<String>,
     onTextChange: (String) -> Unit,
     onSearch: () -> Unit,
+    onClearRecents: () -> Unit = {},
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val keyboardController = LocalSoftwareKeyboardController.current
@@ -114,7 +193,7 @@ private fun SearchBar(
             value = text,
             onValueChange = onTextChange,
             placeholder = { Text("Search by title or author…") },
-            leadingIcon = { androidx.compose.material3.Icon(Icons.Default.Search, contentDescription = null) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             enabled = enabled,
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -142,33 +221,79 @@ private fun SearchBar(
                     },
                 )
             }
+            if (recentSearches.isNotEmpty()) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Clear history", color = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        onClearRecents()
+                        isFocused = false
+                    },
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ResultsList(results: List<SearchResult>, onDownload: (SearchResult) -> Unit) {
-    LazyColumn(
+private fun ResultsList(
+    results: List<SearchResult>,
+    onDownload: (SearchResult) -> Unit,
+    onRefresh: () -> Unit,
+    isRefreshing: Boolean = false,
+    selectionMode: Boolean = false,
+    selectedHashes: Set<String> = emptySet(),
+    onToggleSelection: (String) -> Unit = {},
+) {
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            horizontal = 16.dp, vertical = 8.dp,
-        ),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        itemsIndexed(results) { _, result ->
-            BookResultCard(result = result, onDownload = onDownload)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            itemsIndexed(results) { _, result ->
+                BookResultCard(
+                    result = result,
+                    onDownload = onDownload,
+                    selectionMode = selectionMode,
+                    isSelected = selectedHashes.contains(result.fileHash),
+                    onToggleSelection = { onToggleSelection(result.fileHash) },
+                )
+            }
         }
     }
 }
 
 @Composable
-fun BookResultCard(result: SearchResult, onDownload: (SearchResult) -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+fun BookResultCard(
+    result: SearchResult,
+    onDownload: (SearchResult) -> Unit,
+    selectionMode: Boolean = false,
+    isSelected: Boolean = false,
+    onToggleSelection: (() -> Unit)? = null,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (selectionMode) Modifier.clickable { onToggleSelection?.invoke() } else Modifier),
+    ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth(),
             ) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onToggleSelection?.invoke() },
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = result.title.ifBlank { result.fileName },
@@ -342,8 +467,79 @@ private fun SearchingIndicator() {
 }
 
 @Composable
-private fun NoResultsState() {
-    CenteredContent(icon = "🔍", title = "No results found")
+private fun NoResultsState(onRetry: () -> Unit = {}) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CenteredContent(icon = "🔍", title = "No results found")
+        Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
+    }
+}
+
+@Composable
+private fun SortFilterBar(
+    sortMode: SortMode,
+    languageFilter: LanguageFilter,
+    onSortChange: (SortMode) -> Unit,
+    onLanguageChange: (LanguageFilter) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        var sortExpanded by remember { mutableStateOf(false) }
+        FilterChip(
+            selected = false,
+            onClick = { sortExpanded = true },
+            label = { Text("Sort: ${sortMode.label}") },
+            trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) },
+        )
+        DropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
+            SortMode.entries.forEach { mode ->
+                DropdownMenuItem(
+                    text = { Text(mode.label) },
+                    onClick = { onSortChange(mode); sortExpanded = false },
+                )
+            }
+        }
+        var langExpanded by remember { mutableStateOf(false) }
+        FilterChip(
+            selected = languageFilter != LanguageFilter.ALL,
+            onClick = { langExpanded = true },
+            label = { Text(if (languageFilter == LanguageFilter.ALL) "All languages" else "English only") },
+            trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) },
+        )
+        DropdownMenu(expanded = langExpanded, onDismissRequest = { langExpanded = false }) {
+            listOf(LanguageFilter.ALL to "All languages", LanguageFilter.ENGLISH to "English only").forEach { (filter, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = { onLanguageChange(filter); langExpanded = false },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorState(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("\u26A0\uFE0F", style = MaterialTheme.typography.displayMedium)
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(top = 8.dp, bottom = 16.dp),
+        )
+        Button(onClick = onRetry) { Text("Retry") }
+    }
 }
 
 @Composable

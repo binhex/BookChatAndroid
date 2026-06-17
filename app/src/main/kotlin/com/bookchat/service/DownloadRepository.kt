@@ -14,6 +14,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +38,7 @@ class DownloadRepository @Inject constructor(
     private val searchRepository: SearchRepository,
     private val botStatsRepository: BotStatsRepository,
     private val userEventBus: UserEventBus,
+    private val queueStore: DownloadQueueStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -47,8 +52,23 @@ class DownloadRepository @Inject constructor(
     val completed: StateFlow<List<DownloadItem>> = _completed.asStateFlow()
 
     private var downloadJob: Job? = null
+    private var saveJob: Job? = null
+    private var processing = false
+    private val queueMutex = Mutex()
 
     init {
+        // Restore persisted queue
+        scope.launch {
+            val saved = queueStore.load()
+            if (saved.isNotEmpty()) {
+                queueMutex.withLock {
+                    _queue.value = saved
+                }
+                callSave()
+                if (_activeDownload.value == null) tryProcessNext()
+            }
+        }
+
         scope.launch {
             ircRepository.dccOffers.collect { offer ->
                 val active = _activeDownload.value
@@ -62,9 +82,14 @@ class DownloadRepository @Inject constructor(
     }
 
     fun enqueue(item: DownloadItem) {
-        _queue.value = _queue.value + item
-        startServiceIfNeeded()
-        if (_activeDownload.value == null) scope.launch { processNext() }
+        scope.launch {
+            queueMutex.withLock {
+                _queue.value = _queue.value + item
+            }
+            callSave()
+            startServiceIfNeeded()
+            if (_activeDownload.value == null) tryProcessNext()
+        }
     }
 
     fun cancelActive() {
@@ -72,31 +97,53 @@ class DownloadRepository @Inject constructor(
         val active = _activeDownload.value ?: return
         moveToCompleted(active.copy(state = DownloadItemState.Cancelled))
         searchRepository.updateResultState(active.expectedFileName, DownloadState.Idle)
-        _activeDownload.value = null
-        scope.launch { processNext() }
     }
 
     fun removeFromQueue(id: UUID) {
-        _queue.value = _queue.value.filter { it.id != id }
+        scope.launch {
+            queueMutex.withLock {
+                _queue.value = _queue.value.filter { it.id != id }
+            }
+            callSave()
+            if (_activeDownload.value == null) tryProcessNext()
+        }
     }
 
     fun retry(item: DownloadItem) {
-        _completed.value = _completed.value.filter { it.id != item.id }
-        enqueue(item.copy(id = UUID.randomUUID(), state = DownloadItemState.Queued))
+        scope.launch {
+            queueMutex.withLock {
+                _completed.value = _completed.value.filter { it.id != item.id }
+                _queue.value = _queue.value + item.copy(id = UUID.randomUUID(), state = DownloadItemState.Queued)
+            }
+            callSave()
+            startServiceIfNeeded()
+            if (_activeDownload.value == null) tryProcessNext()
+        }
     }
 
-    private suspend fun processNext() {
-        val next = _queue.value.firstOrNull() ?: run {
-            ircRepository.setDownloadActive(false)
-            stopService()
-            return
+    private fun tryProcessNext() {
+        scope.launch {
+            queueMutex.withLock {
+                if (processing) return@withLock
+                processing = true
+                try {
+                    val next = _queue.value.firstOrNull() ?: run {
+                        ircRepository.setDownloadActive(false)
+                        stopService()
+                        return@withLock
+                    }
+                    val channel = settingsRepository.settings.first().ircChannel
+                    _queue.value = _queue.value.drop(1)
+                    callSave()
+                    _activeDownload.value = next.copy(state = DownloadItemState.RequestSent)
+                    ircRepository.setDownloadActive(true)
+                    ircRepository.sendRaw("PRIVMSG $channel :${next.downloadCommand}")
+                    searchRepository.updateResultState(next.expectedFileName, DownloadState.Requesting)
+                } finally {
+                    processing = false
+                }
+            }
         }
-        val channel = settingsRepository.settings.first().ircChannel
-        _queue.value = _queue.value.drop(1)
-        _activeDownload.value = next.copy(state = DownloadItemState.RequestSent)
-        ircRepository.setDownloadActive(true)
-        ircRepository.sendRaw("PRIVMSG $channel :${next.downloadCommand}")
-        searchRepository.updateResultState(next.expectedFileName, DownloadState.Requesting)
     }
 
     private fun startDccTransfer(item: DownloadItem, offer: com.bookchat.irc.DccOffer) {
@@ -109,12 +156,14 @@ class DownloadRepository @Inject constructor(
 
             val speedWindow = ArrayDeque<Pair<Long, Long>>()
             var lastUpdate = System.currentTimeMillis()
+            val timeout = settingsRepository.settings.first().downloadTimeoutSeconds
 
             val result = DccDownloader.download(
                 ippDotted = offer.ippDotted,
                 port = offer.port,
                 fileSize = offer.fileSize,
                 destFile = tempFile,
+                timeoutSeconds = timeout,
                 onProgress = { bytesReceived ->
                     val now = System.currentTimeMillis()
                     speedWindow.addLast(now to bytesReceived)
@@ -140,7 +189,9 @@ class DownloadRepository @Inject constructor(
                     }
                 },
             )
+            if (!isActive) return@launch
 
+            var completed = false
             result.fold(
                 onSuccess = { file ->
                     // Read fresh settings at save time — avoids using stale cache
@@ -174,6 +225,7 @@ class DownloadRepository @Inject constructor(
                     }
 
                     moveToCompleted(item.copy(state = terminalState))
+                    completed = true
                     searchRepository.updateResultState(
                         item.expectedFileName,
                         if (terminalState is DownloadItemState.Failed)
@@ -206,12 +258,21 @@ class DownloadRepository @Inject constructor(
                         searchRepository.updateResultState(item.expectedFileName, DownloadState.Failed(msg))
                         val botName = item.downloadCommand.substringBefore(" ").removePrefix("!")
                         botStatsRepository.recordFailure(botName)
+                        completed = true
                     }
                 },
             )
 
-            _activeDownload.value = null
-            processNext()
+            // Only null if moveToCompleted was NOT called (CancellationException path)
+            if (!completed) _activeDownload.value = null
+        }
+    }
+
+    private fun callSave() {
+        saveJob?.cancel()
+        saveJob = scope.launch {
+            delay(100)
+            queueStore.save(_queue.value)
         }
     }
 
@@ -219,7 +280,11 @@ class DownloadRepository @Inject constructor(
 
     private fun moveToCompleted(item: DownloadItem) {
         _activeDownload.value = null
-        _completed.value = (listOf(item) + _completed.value).take(10)
+        callSave()
+        queueMutex.withLock {
+            _completed.value = (listOf(item) + _completed.value).take(10)
+        }
+        tryProcessNext()
     }
 
     private fun startServiceIfNeeded() {

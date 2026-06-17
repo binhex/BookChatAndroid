@@ -113,7 +113,9 @@ class IrcClient {
                 if (!registered && line.contains(" 001 ")) {
                     registered = true
                     if (settings.ircPassword.isNotBlank()) {
-                        pw.println("PRIVMSG NickServ :IDENTIFY ${settings.ircPassword}")
+                        val cmd = "PRIVMSG NickServ :IDENTIFY ${settings.ircPassword}"
+                        pw.println(cmd)
+                        _sentLines.tryEmit("PRIVMSG NickServ :IDENTIFY \u2022\u2022\u2022\u2022")
                     }
                     sendObserved(pw, "JOIN ${settings.ircChannel}")
                     _connectionState.value = IrcConnectionState.Connected

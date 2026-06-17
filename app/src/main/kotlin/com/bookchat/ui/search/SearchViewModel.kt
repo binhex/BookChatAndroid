@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -63,6 +64,48 @@ class SearchViewModel @Inject constructor(
 
     @Volatile private var currentNick = ""
 
+    private val passwordPattern = Regex("""(IDENTIFY)\s+\S+""", RegexOption.IGNORE_CASE)
+
+    enum class SortMode(val label: String) {
+        RELIABILITY("Reliability"),
+        SIZE("Size"),
+        FORMAT("Format"),
+    }
+    enum class LanguageFilter { ALL, ENGLISH }
+
+    private val _sortMode = MutableStateFlow(SortMode.RELIABILITY)
+    val sortMode: StateFlow<SortMode> = _sortMode.asStateFlow()
+
+    private val _languageFilter = MutableStateFlow(LanguageFilter.ALL)
+    val languageFilter: StateFlow<LanguageFilter> = _languageFilter.asStateFlow()
+
+    private var _lastQuery = ""
+
+    private val _selectionMode = MutableStateFlow(false)
+    val selectionMode: StateFlow<Boolean> = _selectionMode.asStateFlow()
+
+    private val _selectedHashes = MutableStateFlow<Set<String>>(emptySet())
+    val selectedHashes: StateFlow<Set<String>> = _selectedHashes.asStateFlow()
+
+    val sortedAndFiltered: StateFlow<List<SearchResult>> =
+        combine(results, _sortMode, _languageFilter) { list, sort, lang ->
+            var filtered = list
+            if (lang == LanguageFilter.ENGLISH) {
+                filtered = filtered.filter {
+                    it.language.isBlank() || it.language.lowercase() in setOf("eng", "en", "english")
+                }
+            }
+            when (sort) {
+                SortMode.RELIABILITY -> filtered.sortedByDescending { it.reliabilityScore ?: -1.0 }
+                SortMode.SIZE -> filtered.sortedByDescending { it.fileSizeBytes }
+                SortMode.FORMAT -> filtered.sortedBy {
+                    when (it.format.uppercase()) {
+                        "EPUB" -> 0; "MOBI" -> 1; "AZW3" -> 2; "PDF" -> 3; else -> 4
+                    }
+                }
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
         viewModelScope.launch {
             settingsRepository.settings.collect { currentNick = it.ircNickname }
@@ -73,12 +116,18 @@ class SearchViewModel @Inject constructor(
                 val relevant = (nick.isNotBlank() && line.contains(nick, ignoreCase = true))
                     || line.startsWith("ERROR", ignoreCase = true)
                     || numericReplyRegex.containsMatchIn(line)
-                if (relevant) addDiagnosticsEntry(DiagnosticsEntry(DiagnosticsDirection.In, line))
+                if (relevant) addDiagnosticsEntry(DiagnosticsEntry(
+                    DiagnosticsDirection.In,
+                    line.replace(passwordPattern, "$1 \u2022\u2022\u2022\u2022"),
+                ))
             }
         }
         viewModelScope.launch {
             ircRepository.sentLines.collect { line ->
-                addDiagnosticsEntry(DiagnosticsEntry(DiagnosticsDirection.Out, line))
+                addDiagnosticsEntry(DiagnosticsEntry(
+                    DiagnosticsDirection.Out,
+                    line.replace(passwordPattern, "$1 \u2022\u2022\u2022\u2022"),
+                ))
             }
         }
         viewModelScope.launch {
@@ -135,7 +184,50 @@ class SearchViewModel @Inject constructor(
     fun onSearch() {
         val query = _searchText.value.trim()
         if (query.isBlank()) return
+        _lastQuery = query
         viewModelScope.launch(Dispatchers.IO) { searchRepository.search(query) }
+    }
+
+    fun retryLastSearch() {
+        val query = _lastQuery.ifBlank { _searchText.value.trim() }
+        if (query.isBlank()) return
+        onSearchTextChange(query)
+        onSearch()
+    }
+
+    fun setSortMode(mode: SortMode) { _sortMode.value = mode }
+    fun setLanguageFilter(filter: LanguageFilter) { _languageFilter.value = filter }
+
+    fun toggleSelectionMode() {
+        _selectionMode.value = !_selectionMode.value
+        if (!_selectionMode.value) _selectedHashes.value = emptySet()
+    }
+
+    fun toggleSelection(hash: String) {
+        _selectedHashes.value = if (_selectedHashes.value.contains(hash)) {
+            _selectedHashes.value - hash
+        } else {
+            _selectedHashes.value + hash
+        }
+    }
+
+    fun batchDownload() {
+        try {
+            val selected = _selectedHashes.value
+            val allResults = results.value
+            selected.forEach { hash ->
+                allResults.find { it.fileHash == hash }?.let { onDownload(it) }
+            }
+        } finally {
+            _selectionMode.value = false
+            _selectedHashes.value = emptySet()
+        }
+    }
+
+    fun clearRecentSearches() {
+        viewModelScope.launch {
+            settingsRepository.clearRecentSearches()
+        }
     }
 
     fun onDownload(result: SearchResult) {

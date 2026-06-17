@@ -173,6 +173,18 @@ fun SettingsScreen(
                 )
             }
             item { HorizontalDivider() }
+            item { SectionHeader("Downloads") }
+            item {
+                EditableField(
+                    label = "Download timeout (seconds)",
+                    value = settings.downloadTimeoutSeconds.toString(),
+                    keyboardType = KeyboardType.Number,
+                    validate = { it.toIntOrNull()?.let { v -> v in 1..3600 } ?: false },
+                    errorMessage = "Must be 1\u20133600",
+                    onSave = { viewModel.update { it.copy(downloadTimeoutSeconds = this.toInt()) } },
+                )
+            }
+            item { HorizontalDivider() }
             item { SectionHeader("Google Drive") }
             item {
                 ListItem(
