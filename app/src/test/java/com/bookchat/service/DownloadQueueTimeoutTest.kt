@@ -93,5 +93,5 @@ class DownloadQueueTimeoutTest {
         assertEquals("Second item should be B", "B", queue[1].displayTitle)
         assertEquals("Third item should be C", "C", queue[2].displayTitle)
     }
+
 }
-EOF
