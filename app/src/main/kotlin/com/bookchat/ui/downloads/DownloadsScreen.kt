@@ -113,6 +113,40 @@ private fun ActiveDownloadCard(item: DownloadItem, onStop: () -> Unit) {
                             .padding(vertical = 6.dp),
                     )
                 }
+                is DownloadItemState.RequestSent -> {
+                    Text(
+                        text = "Waiting for bot response…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
+                    )
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                    )
+                }
+                is DownloadItemState.DccOffered -> {
+                    Text(
+                        text = "Starting download…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp),
+                    )
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                    )
+                }
+                is DownloadItemState.Queued -> {
+                    Text(
+                        text = "In queue — waiting…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 else -> {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp).padding(top = 4.dp))
                 }

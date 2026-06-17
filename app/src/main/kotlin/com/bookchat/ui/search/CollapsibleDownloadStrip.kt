@@ -41,17 +41,17 @@ fun SearchScreenWithStrip(content: @Composable () -> Unit) {
 
     val hasActivity = active != null || queue.isNotEmpty()
     val sheetState = rememberStandardBottomSheetState(
-        initialValue = SheetValue.PartiallyExpanded,
+        initialValue = if (hasActivity) SheetValue.Expanded else SheetValue.PartiallyExpanded,
         skipHiddenState = true,
+        confirmValueChange = { true },
     )
     val scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState)
-    val scope = rememberCoroutineScope()
 
     if (hasActivity) {
         BottomSheetScaffold(
             scaffoldState = scaffoldState,
             sheetContent = { DownloadsScreen(viewModel = downloadViewModel) },
-            sheetPeekHeight = 64.dp,
+            sheetPeekHeight = 120.dp,
         ) {
             content()
         }

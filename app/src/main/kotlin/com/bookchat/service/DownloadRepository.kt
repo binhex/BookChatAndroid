@@ -53,6 +53,7 @@ class DownloadRepository @Inject constructor(
 
     private var downloadJob: Job? = null
     private var saveJob: Job? = null
+    private var requestTimeoutJob: Job? = null
     private var processing = false
     private val queueMutex = Mutex()
 
@@ -135,10 +136,26 @@ class DownloadRepository @Inject constructor(
                     val channel = settingsRepository.settings.first().ircChannel
                     _queue.value = _queue.value.drop(1)
                     callSave()
-                    _activeDownload.value = next.copy(state = DownloadItemState.RequestSent)
+                    val item = next.copy(state = DownloadItemState.RequestSent)
+                    _activeDownload.value = item
                     ircRepository.setDownloadActive(true)
                     ircRepository.sendRaw("PRIVMSG $channel :${next.downloadCommand}")
                     searchRepository.updateResultState(next.expectedFileName, DownloadState.Requesting)
+
+                    // Start timeout for request→offer phase
+                    requestTimeoutJob?.cancel()
+                    requestTimeoutJob = scope.launch {
+                        val timeoutSeconds = settingsRepository.settings.first().downloadTimeoutSeconds
+                        delay(timeoutSeconds * 1000L)
+                        queueMutex.withLock {
+                            val current = _activeDownload.value
+                            if (current?.state is DownloadItemState.RequestSent) {
+                                val msg = "No response from bot within ${timeoutSeconds}s"
+                                moveToCompleted(current.copy(state = DownloadItemState.Failed(msg)))
+                                searchRepository.updateResultState(current.expectedFileName, DownloadState.Failed(msg))
+                            }
+                        }
+                    }
                 } finally {
                     processing = false
                 }
@@ -147,6 +164,7 @@ class DownloadRepository @Inject constructor(
     }
 
     private fun startDccTransfer(item: DownloadItem, offer: com.bookchat.irc.DccOffer) {
+        requestTimeoutJob?.cancel()
         updateActive(item.copy(state = DownloadItemState.DccOffered))
         searchRepository.updateResultState(item.expectedFileName, DownloadState.Downloading(0f))
 
