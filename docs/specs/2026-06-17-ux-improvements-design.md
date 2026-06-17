@@ -138,15 +138,44 @@ Calls a new `clearRecentSearches()` on `SettingsRepository`.
 
 ---
 
-## Files Changed Summary
+## 7. Download Stuck-Transfer Timeout
+
+### Problem
+When a DCC transfer stalls mid-download (sender stops sending data but keeps the
+connection open), the `InputStream.read()` call blocks indefinitely. The download
+hangs forever with no way to recover except force-closing the app.
+
+### Approach
+Add a user-configurable timeout in Settings (seconds) that controls `Socket.setSoTimeout`
+on the download socket. If no data is received within this window, the read throws
+`SocketTimeoutException`, which is caught as a download failure. Default: 60 seconds.
+
+### Changes
+- `AppSettings.kt` — add `downloadTimeoutSeconds: Int = 60`
+- `SettingsRepository.kt` (Keys object) — add a `downloadTimeoutSeconds` key,
+  persist and restore the new field
+- `SettingsScreen.kt` — add an `EditableField` for "Download timeout (seconds)"
+  with numeric keyboard input and validation (1–3600)
+- `DccDownloader.kt` — after `socket.connect()`, set `socket.soTimeout =
+  timeoutMs` (passed as a new parameter). The `download()` function gets a new
+  `timeoutSeconds: Int` parameter.
+- `DownloadRepository.kt` — read `downloadTimeoutSeconds` from settings and
+  pass it through to `DccDownloader.download()`
+
+---
+
+# Files Changed Summary
 
 | File | Change |
 |---|---|
 | `IrcRepository.kt` | Password masking in `sentLines` |
 | `DownloadQueueStore.kt` | **New** — JSON persistence for queue |
-| `DownloadRepository.kt` | Inject & use `DownloadQueueStore` |
+| `DownloadRepository.kt` | Inject & use `DownloadQueueStore`; pass timeout to DccDownloader |
 | `SearchViewModel.kt` | Sort/filter state, selection state, lastQuery cache |
 | `SearchScreen.kt` | Sort/filter chips, batch select UI, retry, pull-to-refresh, clear recents |
 | `BookResultCard` (in `SearchScreen.kt`) | Selection checkbox |
-| `SettingsRepository.kt` | `clearRecentSearches()` method |
+| `SettingsRepository.kt` | `clearRecentSearches()` method; `downloadTimeoutSeconds` key |
 | `SearchRepository.kt` | Expose `lastQuery` |
+| `AppSettings.kt` | Add `downloadTimeoutSeconds` field |
+| `SettingsScreen.kt` | Download timeout field in Settings UI |
+| `DccDownloader.kt` | `soTimeout` on download socket via new `timeoutSeconds` param |
