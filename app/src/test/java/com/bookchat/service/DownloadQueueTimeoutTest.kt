@@ -61,7 +61,7 @@ class DownloadQueueTimeoutTest {
         )
 
         // Simulate: A completes → moveToCompleted → _activeDownload = null
-        var activeDownload: DownloadItem? = items.removeFirst()
+        var activeDownload: DownloadItem? = items.removeAt(0)
         activeDownload = null
 
         // After moveToCompleted, tryProcessNext should pick B
